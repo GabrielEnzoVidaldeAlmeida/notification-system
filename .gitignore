@@ -7,4 +7,8 @@
 /backend/venv
 
 # Geral
+venv
 .env
+migrations
+__pycache__
+instance
