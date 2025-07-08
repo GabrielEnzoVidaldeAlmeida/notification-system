@@ -44,6 +44,35 @@ def subscribe_to_topic(topic_id):
 
     return jsonify({'message': 'Subscribed successfully'}), 200
 
+
+@notifications_bp.route('/topics/<int:topic_id>/unsubscribe', methods=['POST'])
+@jwt_required()
+def unsubscribe_from_topic(topic_id):
+    user_id = get_jwt_identity()
+
+    subscription = TopicUser.query.filter_by(user_id=user_id, topic_id=topic_id).first()
+    if not subscription:
+        return jsonify({'message': 'Not subscribed to this topic'}), 404
+    
+    db.session.delete(subscription)
+    db.session.commit()
+
+    return jsonify({'message': 'Unsubscribed successfully'}), 200
+
+
+@notifications_bp.route('/topics/<int:topic_id>/subscription', methods=['GET'])
+@jwt_required()
+def get_subscription_status(topic_id):
+    user_id = get_jwt_identity()
+
+    if not Topic.query.get(topic_id):
+        return jsonify({'message': 'Topic not found'}), 404
+
+    subscription = TopicUser.query.filter_by(user_id=user_id, topic_id=topic_id).first()
+    
+    return jsonify({'subscribed': subscription is not None}), 200
+
+
 @notifications_bp.route('/topics/<int:topic_id>/publish', methods=['POST'])
 @jwt_required()
 def publish_to_topic(topic_id):
