@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 type Topic = {
   id: number;
   name: string;
+  isSubscribed: boolean;
 };
 
 export default function PublishPage() {

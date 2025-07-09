@@ -4,33 +4,88 @@ import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/api";
 import { useAuthRedirect } from "@/hooks/useAuthRedirect";
 import Link from "next/link";
+import { useSocket } from "@/contexts/SocketContext";
 
 type Topic = {
   id: number;
   name: string;
+  isSubscribed: boolean;
 };
 
 export default function HomePage() {
   useAuthRedirect();
+  const { socket, notifications } = useSocket();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    authFetch<Topic[]>("http://localhost:5000/notifications/topics")
-      .then(setTopics)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+    if (notifications.length > 0) {
+      console.log("Novas notificações:", notifications);
+    }
+  }, [notifications]);
 
-  async function handleSubscribe(topicId: number) {
+  useEffect(() => {
+    async function fetchTopicsWithStatus() {
+      try {
+        const topicsData = await authFetch<Omit<Topic, "isSubscribed">[]>(
+          "http://localhost:5000/notifications/topics"
+        );
+
+        const topicsWithStatus: Topic[] = await Promise.all(
+          topicsData.map(async (topic) => {
+            try {
+              const result = await authFetch<{ subscribed: boolean }>(
+                `http://localhost:5000/notifications/topics/${topic.id}/subscription`
+              );
+              return { ...topic, isSubscribed: result.subscribed };
+            } catch {
+              return { ...topic, isSubscribed: false };
+            }
+          })
+        );
+
+        setTopics(topicsWithStatus);
+
+        topicsWithStatus.forEach((topic) => {
+          if (topic.isSubscribed) {
+            socket?.emit("subscribe", { topic_id: topic.id });
+          }
+        });
+      } catch (err) {
+        console.error("Erro ao carregar tópicos:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchTopicsWithStatus();
+  }, [socket]);
+
+  async function toggleSubscription(topic: Topic) {
+    const isSubscribing = !topic.isSubscribed;
+    const url = `http://localhost:5000/notifications/topics/${topic.id}/${
+      isSubscribing ? "subscribe" : "unsubscribe"
+    }`;
+
     try {
-      await authFetch(
-        `http://localhost:5000/notifications/topics/${topicId}/subscribe`,
-        { method: "POST" }
+      await authFetch(url, {
+        method: "POST",
+      });
+
+      const newTopics = topics.map((t) =>
+        t.id === topic.id ? { ...t, isSubscribed: isSubscribing } : t
       );
-      alert("Inscrito com sucesso!");
+      setTopics(newTopics);
+
+      if (isSubscribing) {
+        socket?.emit("subscribe", { topic_id: topic.id });
+        console.log("Emitiu subscribe para o tópico:", topic.id);
+      } else {
+        socket?.emit("unsubscribe", { topic_id: topic.id });
+        console.log("Emitiu unsubscribe para o tópico:", topic.id);
+      }
     } catch {
-      alert("Erro ao se inscrever.");
+      alert("Erro ao alterar inscrição.");
     }
   }
 
@@ -49,10 +104,14 @@ export default function HomePage() {
             >
               <span>{topic.name}</span>
               <button
-                onClick={() => handleSubscribe(topic.id)}
-                className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                onClick={() => toggleSubscription(topic)}
+                className={`px-3 py-1 hover:cursor-pointer rounded text-white ${
+                  topic.isSubscribed
+                    ? "bg-red-500 hover:bg-red-700"
+                    : "bg-blue-500 hover:bg-blue-700"
+                }`}
               >
-                Inscrever-se
+                {topic.isSubscribed ? "Cancelar inscrição" : "Inscrever-se"}
               </button>
             </li>
           ))}
